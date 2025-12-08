@@ -47,6 +47,13 @@ public class ArkCollectChangesPolicy implements CollectChangesBetweenRepositorie
         // Get executor for this root
         ArkCommandExecutor executor = myVcs.createExecutorForRoot(toRoot);
 
+        // Ensure workspace is initialized before running commands
+        String email = toRoot.getProperty(ArkSettings.USER_EMAIL);
+        String host = toRoot.getProperty(ArkSettings.SERVER_HOST);
+        if (email != null && host != null) {
+            executor.ensureWorkspaceInitialized(email, host);
+        }
+
         // Create parser with executor to fetch individual changelists
         ArkChangelistParser parser = new ArkChangelistParser(executor);
 

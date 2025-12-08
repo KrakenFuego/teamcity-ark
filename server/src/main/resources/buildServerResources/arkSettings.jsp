@@ -45,6 +45,17 @@
         </tr>
 
         <tr>
+            <th><label for="secure:userPassword">Password:<span class="mandatoryAsterix" title="Mandatory field">*</span></label></th>
+            <td>
+                <props:passwordProperty name="secure:userPassword" className="longField"/>
+                <span class="smallNote">
+                    Password for ARK authentication
+                </span>
+                <span class="error" id="error_secure:userPassword"></span>
+            </td>
+        </tr>
+
+        <tr>
             <th><label for="projectName">Project Name:<span class="mandatoryAsterix" title="Mandatory field">*</span></label></th>
             <td>
                 <props:textProperty name="projectName" className="longField" maxlength="256"/>

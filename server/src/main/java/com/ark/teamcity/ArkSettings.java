@@ -26,6 +26,11 @@ public class ArkSettings {
     public static final String USER_EMAIL = "userEmail";
 
     /**
+     * User password for ARK authentication (secure property)
+     */
+    public static final String USER_PASSWORD = "secure:userPassword";
+
+    /**
      * Path to ARK executable (default: ark)
      */
     public static final String ARK_EXECUTABLE_PATH = "arkExecutablePath";

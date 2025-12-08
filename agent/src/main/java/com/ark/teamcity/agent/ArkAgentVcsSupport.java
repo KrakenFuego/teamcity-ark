@@ -13,6 +13,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -69,6 +70,11 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
         String branchName = root.getProperty("branchName");
         String serverHost = root.getProperty("serverHost");
         String userEmail = root.getProperty("userEmail");
+        String userPassword = root.getProperty("secure:userPassword");
+        String arkExecutablePath = root.getProperty("arkExecutablePath");
+        if (arkExecutablePath == null || arkExecutablePath.trim().isEmpty()) {
+            arkExecutablePath = "ark";
+        }
 
         if (projectName == null || projectName.trim().isEmpty()) {
             throw new VcsException("Project name not configured in VCS root");
@@ -78,6 +84,9 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
         }
         if (userEmail == null || userEmail.trim().isEmpty()) {
             throw new VcsException("User email not configured in VCS root");
+        }
+        if (userPassword == null || userPassword.trim().isEmpty()) {
+            throw new VcsException("Password not configured in VCS root");
         }
 
         logger.message("ARK: Project: " + projectName);
@@ -108,8 +117,13 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
 
             // Initialize workspace
             logger.message("ARK: Initializing workspace");
-            runArkCommand(checkoutDirectory, logger,
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
                 "init", "-email", userEmail, "-host", serverHost);
+
+            // Switch to the correct project and branch
+            logger.message("ARK: Switching to project " + projectName + " branch " + branchName);
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
+                "switch-branch", "-project", projectName, "-branch", branchName);
 
         } else if (!workspaceExists) {
             // First time checkout - workspace doesn't exist yet
@@ -129,17 +143,27 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
 
             // Initialize workspace
             logger.message("ARK: Initializing workspace");
-            runArkCommand(checkoutDirectory, logger,
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
                 "init", "-email", userEmail, "-host", serverHost);
+
+            // Switch to the correct project and branch
+            logger.message("ARK: Switching to project " + projectName + " branch " + branchName);
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
+                "switch-branch", "-project", projectName, "-branch", branchName);
 
         } else {
             // Incremental update - workspace already exists
             logger.message("ARK: Incremental update - reusing existing workspace");
+
+            // Always switch to the correct project and branch in case it changed
+            logger.message("ARK: Ensuring correct project " + projectName + " branch " + branchName);
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
+                "switch-branch", "-project", projectName, "-branch", branchName);
         }
 
         // Get specific changelist
         logger.message("ARK: Getting CL " + toVersion);
-        runArkCommand(checkoutDirectory, logger,
+        runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
             "get", "-cl", toVersion);
 
         logger.message("ARK: Checkout completed successfully");
@@ -173,11 +197,12 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
      * Run an ark command
      */
     private void runArkCommand(File workingDir, BuildProgressLogger logger,
+                              String arkExecutable, String password,
                               String... args) throws VcsException {
         try {
             // Build command
             List<String> command = new ArrayList<>();
-            command.add("ark");
+            command.add(arkExecutable);
             command.addAll(Arrays.asList(args));
 
             logger.message("ARK: Running: " + String.join(" ", command));
@@ -193,16 +218,48 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
 
             Process process = pb.start();
 
-            // Stream output to build log
+            // Check if this is a command that needs authentication (init command)
+            boolean needsAuth = args.length > 0 && "init".equals(args[0]);
+
+            // Read output in a separate thread to prevent blocking
             StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    logger.message("  " + line);
-                    output.append(line).append("\n");
+            Thread outputReader = new Thread(() -> {
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(process.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        logger.message("  " + line);
+                        output.append(line).append("\n");
+                    }
+                } catch (Exception e) {
+                    logger.warning("Error reading process output: " + e.getMessage());
                 }
+            });
+            outputReader.start();
+
+            // Only send password for commands that need authentication
+            if (needsAuth && password != null && !password.isEmpty()) {
+                logger.message("ARK: Waiting for password prompt...");
+                // Give the process time to start and prompt for password
+                Thread.sleep(5000);
+
+                // Only send password if process is still running (waiting for input)
+                if (process.isAlive()) {
+                    OutputStreamWriter writer = new OutputStreamWriter(process.getOutputStream());
+                    writer.write(password);
+                    writer.write("\n");
+                    writer.flush();
+                    writer.close();
+                    logger.message("ARK: Password sent");
+                } else {
+                    logger.message("ARK: Process completed without needing password (cached auth)");
+                }
+            } else {
+                process.getOutputStream().close();
             }
+
+            // Wait for output reader to finish
+            outputReader.join();
 
             int exitCode = process.waitFor();
             if (exitCode != 0) {

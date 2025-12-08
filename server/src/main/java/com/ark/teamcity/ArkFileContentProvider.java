@@ -35,7 +35,7 @@ public class ArkFileContentProvider implements VcsFileContentProvider {
         }
 
         if (version == null) {
-            throw new VcsFileNotFoundException("File not found", change.getRelativeFileName(), null);
+            throw new VcsFileNotFoundException("File not found: " + change.getRelativeFileName());
         }
 
         return getContent(change.getRelativeFileName(), root, version);
@@ -59,7 +59,7 @@ public class ArkFileContentProvider implements VcsFileContentProvider {
 
         File file = new File(workingDir, filePath);
         if (!file.exists()) {
-            throw new VcsFileNotFoundException("File not found at CL " + version, filePath, null);
+            throw new VcsFileNotFoundException("File not found: " + filePath + " at CL " + version);
         }
 
         try {

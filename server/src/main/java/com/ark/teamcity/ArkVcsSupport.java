@@ -56,7 +56,24 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
     @Override
     public String getCurrentVersion(@NotNull VcsRoot root) throws VcsException {
         LOG.info("Getting current version for ARK project: " + root.getProperty(ArkSettings.PROJECT_NAME));
+        LOG.info("Working directory configured: " + root.getProperty(ArkSettings.WORKING_DIRECTORY));
+
         ArkCommandExecutor executor = createExecutor(root);
+
+        // Ensure workspace is initialized before running commands
+        String email = root.getProperty(ArkSettings.USER_EMAIL);
+        String host = root.getProperty(ArkSettings.SERVER_HOST);
+        LOG.info("Email: " + email + ", Host: " + host);
+
+        if (email != null && host != null) {
+            LOG.info("Calling ensureWorkspaceInitialized...");
+            executor.ensureWorkspaceInitialized(email, host);
+            LOG.info("ensureWorkspaceInitialized completed");
+        } else {
+            LOG.warn("Email or host is null, skipping workspace initialization");
+        }
+
+        LOG.info("Calling getCurrentChangelistId...");
         String version = executor.getCurrentChangelistId();
         LOG.info("Current version: CL " + version);
         return version;
@@ -374,13 +391,14 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
         String arkPath = root.getProperty(ArkSettings.ARK_EXECUTABLE_PATH,
                 ArkSettings.DEFAULT_ARK_EXECUTABLE);
         String workingDir = root.getProperty(ArkSettings.WORKING_DIRECTORY);
+        String password = root.getProperty(ArkSettings.USER_PASSWORD);
 
         File workDir = null;
         if (workingDir != null && !workingDir.trim().isEmpty()) {
             workDir = new File(workingDir);
         }
 
-        return new ArkCommandExecutor(arkPath, workDir);
+        return new ArkCommandExecutor(arkPath, workDir, password);
     }
 
     // Public helper method for ArkCollectChangesPolicy
