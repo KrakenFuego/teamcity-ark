@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<assembly>
+    <id>plugin-agent-assembly</id>
+    <includeBaseDirectory>false</includeBaseDirectory>
+    <formats>
+        <format>zip</format>
+    </formats>
+    <files>
+        <file>
+            <source>../agent/teamcity-plugin.xml</source>
+            <outputDirectory>/ark</outputDirectory>
+        </file>
+    </files>
+    <moduleSets>
+        <moduleSet>
+            <useAllReactorProjects>true</useAllReactorProjects>
+            <includes>
+                <include>com.ark.teamcity:teamcity-ark-vcs-agent</include>
+            </includes>
+            <binaries>
+                <outputDirectory>ark/lib</outputDirectory>
+                <unpack>false</unpack>
+                <dependencySets>
+                    <dependencySet>
+                        <includes>
+                            <include>*</include>
+                        </includes>
+                    </dependencySet>
+                </dependencySets>
+            </binaries>
+        </moduleSet>
+    </moduleSets>
+</assembly>
