@@ -366,6 +366,40 @@ public class ArkCommandExecutor {
         return execute("branch-list", "-project", projectName);
     }
 
+
+  @NotNull
+  public List<String> listBranchNames(@NotNull String projectName) throws VcsException {
+      String output = listBranches(projectName);
+      List<String> branches = new ArrayList<>();
+
+      // Pattern to extract branch name from "Id: N | Name: <name> | State: ACTIVE"
+      Pattern namePattern = Pattern.compile("Name:\\s*([^|]+)");
+
+      for (String line : output.split("\\r?\\n")) {
+          String trimmed = line.trim();
+          // Skip empty lines and status messages from ARK CLI
+          if (trimmed.isEmpty()
+              || trimmed.startsWith("Connecting")
+              || trimmed.startsWith("Connected")
+              || trimmed.startsWith("Finished")
+              || trimmed.startsWith("Reconciled")
+              || trimmed.startsWith("Error")
+              || trimmed.startsWith("Warning")
+              || trimmed.startsWith("Branches:")) {
+              continue;
+          }
+
+          // Try to extract branch name from structured output
+          Matcher matcher = namePattern.matcher(trimmed);
+          if (matcher.find()) {
+              String branchName = matcher.group(1).trim();
+              branches.add(branchName);
+          }
+      }
+
+      return branches;
+  }
+
     /**
      * Check if an ARK workspace is initialized in the working directory
      *

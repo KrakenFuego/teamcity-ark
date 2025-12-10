@@ -41,6 +41,16 @@ public class ArkSettings {
     public static final String WORKING_DIRECTORY = "workingDirectory";
 
     /**
+     * Branch specification for feature branch support (TeamCity standard property)
+     */
+    public static final String BRANCH_SPEC = "teamcity:branchSpec";
+
+    /**
+     * Branch name prefix for TeamCity compatibility (normalizes ARK branch names)
+     */
+    public static final String BRANCH_NAME_PREFIX = "refs/heads/";
+
+    /**
      * Default branch name
      */
     public static final String DEFAULT_BRANCH_NAME = "main";

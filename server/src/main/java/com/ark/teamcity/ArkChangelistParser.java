@@ -81,6 +81,22 @@ public class ArkChangelistParser {
      */
     @NotNull
     public ModificationData parseSingleChangelist(@NotNull String printOutput, @NotNull VcsRoot root) throws VcsException {
+        return parseSingleChangelist(printOutput, root, null);
+    }
+
+    /**
+     * Parse a single changelist output into ModificationData with branch association.
+     * When branch is provided, the version will be formatted as "changelistId#branchName"
+     * which TeamCity uses to associate the modification with the correct branch.
+     *
+     * @param printOutput Output from 'ark print -cl <id>' command
+     * @param root VCS root for the modification
+     * @param branch Branch name to associate with this modification (for multi-branch support), or null
+     * @return ModificationData representing the changelist
+     * @throws VcsException if parsing fails
+     */
+    @NotNull
+    public ModificationData parseSingleChangelist(@NotNull String printOutput, @NotNull VcsRoot root, @Nullable String branch) throws VcsException {
         String[] lines = printOutput.split("\\r?\\n");
 
         String changelistId = null;
@@ -216,15 +232,50 @@ public class ArkChangelistParser {
             ));
         }
 
+        // Version is just the changelist ID - TeamCity associates modifications with branches
+        // through the RepositoryStateData.branchRevisions map, not through the version string
+        String version = changelistId;
+        String displayVersion = changelistId;
+
         return new ModificationData(
                 commitTime,
                 changes,
                 comment,
                 author,
                 root,
-                changelistId,
-                changelistId
+                version,        // version with branch suffix for TeamCity branch association
+                displayVersion  // display version without branch suffix
         );
+    }
+
+    /**
+     * Parse multiple changelists for a specific branch
+     *
+     * @param fromCl Starting changelist ID (exclusive)
+     * @param toCl Ending changelist ID (inclusive)
+     * @param root VCS root
+     * @param branch Branch name to associate with modifications
+     * @return List of ModificationData for each changelist in range
+     */
+    @NotNull
+    public List<ModificationData> parseChangelistRangeForBranch(int fromCl, int toCl, @NotNull VcsRoot root, @NotNull String branch) throws VcsException {
+        List<ModificationData> modifications = new ArrayList<>();
+
+        if (executor == null) {
+            throw new VcsException("Cannot fetch changelist range: executor is null");
+        }
+
+        for (int cl = fromCl + 1; cl <= toCl; cl++) {
+            try {
+                String output = executor.getChangelistInfo(String.valueOf(cl));
+                ModificationData mod = parseSingleChangelist(output, root, branch);
+                modifications.add(mod);
+            } catch (VcsException e) {
+                LOG.warn("Failed to fetch changelist " + cl + ": " + e.getMessage());
+            }
+        }
+
+        return modifications;
     }
 
     /**
@@ -314,15 +365,21 @@ public class ArkChangelistParser {
     }
 
     /**
-     * Extract changelist number from a version string
-     * ARK uses simple numeric IDs, so this just parses the integer
+     * Extract changelist number from a version string.
+     * Handles both simple format "3" and branch format "3#refs/heads/dev".
      *
-     * @param version The version string (e.g., "3")
+     * @param version The version string (e.g., "3" or "3#refs/heads/dev")
      * @return The numeric changelist ID
      */
     public static int extractChangelistNumber(@NotNull String version) throws VcsException {
         try {
-            return Integer.parseInt(version.trim());
+            String clPart = version.trim();
+            // Handle version#branch format
+            int hashIndex = clPart.indexOf('#');
+            if (hashIndex > 0) {
+                clPart = clPart.substring(0, hashIndex);
+            }
+            return Integer.parseInt(clPart);
         } catch (NumberFormatException e) {
             throw new VcsException("Invalid changelist ID format: " + version);
         }

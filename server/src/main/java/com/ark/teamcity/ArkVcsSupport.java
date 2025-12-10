@@ -11,6 +11,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.util.*;
+import java.util.List;
 
 /**
  * Main VCS support implementation for ARK version control system.
@@ -77,6 +78,116 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
         String version = executor.getCurrentChangelistId();
         LOG.info("Current version: CL " + version);
         return version;
+    }
+
+ 
+  /**
+   * Get the current repository state, returning all branches.
+   * TeamCity will filter branches based on the configured branch spec.
+   *
+   * <p>This follows the same pattern as the Git plugin - return all available branches
+   * and let TeamCity's core filtering handle the branch spec matching.
+   *
+   * @param root The VCS root
+   * @return Repository state with branch revisions for all branches
+   * @throws VcsException if state cannot be retrieved
+   */
+  @NotNull
+  public RepositoryStateData getCurrentState(@NotNull VcsRoot root) throws VcsException {
+      String defaultBranch = root.getProperty(ArkSettings.BRANCH_NAME, ArkSettings.DEFAULT_BRANCH_NAME);
+      String projectName = root.getProperty(ArkSettings.PROJECT_NAME);
+
+      LOG.info("getCurrentState called for project: " + projectName + ", default branch: " + defaultBranch);
+
+      ArkCommandExecutor executor = createExecutor(root);
+
+      // Ensure workspace initialized
+      String email = root.getProperty(ArkSettings.USER_EMAIL);
+      String host = root.getProperty(ArkSettings.SERVER_HOST);
+      if (email != null && host != null) {
+          executor.ensureWorkspaceInitialized(email, host);
+      }
+
+      // Always fetch all branches - TeamCity will filter by branch spec
+      List<String> allBranches;
+      try {
+          allBranches = executor.listBranchNames(projectName);
+          LOG.info("Found " + allBranches.size() + " branches in project " + projectName);
+          for (String b : allBranches) {
+              LOG.info("  Available branch: " + b);
+          }
+      } catch (VcsException e) {
+          LOG.warn("Failed to list branches, falling back to default branch only: " + e.getMessage());
+          // Fall back to single-branch mode
+          if (projectName != null && defaultBranch != null) {
+              executor.switchBranch(projectName, defaultBranch);
+          }
+          String revision = executor.getCurrentChangelistId();
+          return RepositoryStateData.createVersionState(
+              normalizeBranchName(defaultBranch), revision);
+      }
+
+      // If no branches found, return single default branch
+      if (allBranches.isEmpty()) {
+          LOG.warn("No branches found in project, using default branch: " + defaultBranch);
+          if (projectName != null && defaultBranch != null) {
+              executor.switchBranch(projectName, defaultBranch);
+          }
+          String revision = executor.getCurrentChangelistId();
+          return RepositoryStateData.createVersionState(
+              normalizeBranchName(defaultBranch), revision);
+      }
+
+      // Fetch revision for each branch (TeamCity will filter based on branch spec)
+      Map<String, String> branchRevisions = new HashMap<>();
+      for (String branch : allBranches) {
+          LOG.info("Fetching revision for branch: " + branch);
+          executor.switchBranch(projectName, branch);
+          String revision = executor.getCurrentChangelistId();
+          branchRevisions.put(normalizeBranchName(branch), revision);
+          LOG.info("Branch " + branch + " at revision " + revision);
+      }
+
+      // Determine the default branch for the state
+      String normalizedDefault = normalizeBranchName(defaultBranch);
+
+      // Use configured default branch if available, otherwise pick first branch
+      String stateDefaultBranch = branchRevisions.containsKey(normalizedDefault)
+          ? normalizedDefault
+          : branchRevisions.keySet().iterator().next();
+
+      LOG.info("Returning state with " + branchRevisions.size() + " branches, default: " + stateDefaultBranch);
+      return RepositoryStateData.createVersionState(stateDefaultBranch, branchRevisions);
+  }
+
+    /**
+     * Normalize a branch name for TeamCity compatibility.
+     * Converts "main" to "refs/heads/main".
+     *
+     * @param branch The ARK branch name
+     * @return The normalized branch name with refs/heads/ prefix
+     */
+    @NotNull
+    public String normalizeBranchName(@NotNull String branch) {
+        if (branch.startsWith(ArkSettings.BRANCH_NAME_PREFIX)) {
+            return branch;
+        }
+        return ArkSettings.BRANCH_NAME_PREFIX + branch;
+    }
+
+    /**
+     * Denormalize a branch name for ARK CLI.
+     * Converts "refs/heads/main" to "main".
+     *
+     * @param normalized The TeamCity-normalized branch name
+     * @return The ARK branch name without prefix
+     */
+    @NotNull
+    public String getArkBranchName(@NotNull String normalized) {
+        if (normalized.startsWith(ArkSettings.BRANCH_NAME_PREFIX)) {
+            return normalized.substring(ArkSettings.BRANCH_NAME_PREFIX.length());
+        }
+        return normalized;
     }
 
     @NotNull

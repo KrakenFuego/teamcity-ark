@@ -68,16 +68,18 @@
         </tr>
 
         <tr>
-            <th><label for="branchName">Branch Name:<span class="mandatoryAsterix" title="Mandatory field">*</span></label></th>
+            <th><label for="branchName">Default Branch:<span class="mandatoryAsterix" title="Mandatory field">*</span></label></th>
             <td>
                 <props:textProperty name="branchName" className="longField" maxlength="256"/>
                 <span class="smallNote">
-                    The branch to monitor for changes (default: main)
+                    The default branch to monitor for changes (e.g., main, dev)
                     <br/>You can list branches with <code>ark branch-list -project &lt;name&gt;</code>
                 </span>
                 <span class="error" id="error_branchName"></span>
             </td>
         </tr>
+
+        <bs:branchSpecTableRow/>
 
         <tr>
             <th><label for="arkExecutablePath">ARK Executable:</label></th>

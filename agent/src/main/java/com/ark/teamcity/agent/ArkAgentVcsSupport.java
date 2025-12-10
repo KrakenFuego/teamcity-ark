@@ -54,6 +54,8 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
         return AgentCheckoutAbility.canCheckout();
     }
 
+    private static final String BRANCH_NAME_PREFIX = "refs/heads/";
+
     public void updateSources(
             @NotNull VcsRoot root,
             @NotNull CheckoutRules checkoutRules,
@@ -68,6 +70,27 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
         // Get VCS root properties
         String projectName = root.getProperty("projectName");
         String branchName = root.getProperty("branchName");
+
+        // Check for feature branch override from TeamCity
+        // TeamCity passes the logical branch name for feature branch builds
+        String vcsRootId = root.getVcsName() + "_" + root.getId();
+        String featureBranch = build.getSharedConfigParameters().get("teamcity.build.vcs.branch." + vcsRootId);
+        if (featureBranch == null || featureBranch.isEmpty()) {
+            // Try without the ID suffix
+            featureBranch = build.getSharedConfigParameters().get("teamcity.build.branch");
+        }
+
+        if (featureBranch != null && !featureBranch.isEmpty()) {
+            // Strip refs/heads/ prefix if present (TeamCity sends normalized branch names)
+            if (featureBranch.startsWith(BRANCH_NAME_PREFIX)) {
+                featureBranch = featureBranch.substring(BRANCH_NAME_PREFIX.length());
+            }
+            // Only use feature branch if it's different from default
+            if (!featureBranch.equals(branchName)) {
+                logger.message("ARK: Feature branch detected: " + featureBranch);
+                branchName = featureBranch;
+            }
+        }
         String serverHost = root.getProperty("serverHost");
         String userEmail = root.getProperty("userEmail");
         String userPassword = root.getProperty("secure:userPassword");
