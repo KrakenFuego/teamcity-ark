@@ -37,8 +37,8 @@ public class ArkChangelistParser {
 
     private static final Logger LOG = Logger.getInstance(ArkChangelistParser.class.getName());
 
-    // Pattern: CL 3:
-    private static final Pattern CL_PATTERN = Pattern.compile("^CL (\\d+):$");
+    // Pattern: Changelist: 3
+    private static final Pattern CL_PATTERN = Pattern.compile("^Changelist:\\s(\\d+)$");
 
     // Pattern: State: Committed
     private static final Pattern STATE_PATTERN = Pattern.compile("^State:\\s+(.+)$");

@@ -115,7 +115,7 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
         logger.message("ARK: Project: " + projectName);
         logger.message("ARK: Branch: " + branchName);
         logger.message("ARK: Server: " + serverHost);
-        logger.message("ARK: Target CL: " + toVersion);
+        logger.message("ARK: Target Changelist: " + toVersion);
         logger.message("ARK: Checkout directory: " + checkoutDirectory.getAbsolutePath());
         logger.message("ARK: Clean checkout: " + cleanCheckout);
 

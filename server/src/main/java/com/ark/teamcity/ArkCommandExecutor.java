@@ -21,8 +21,8 @@ public class ArkCommandExecutor {
 
     private static final Logger LOG = Logger.getInstance(ArkCommandExecutor.class.getName());
 
-    // Pattern to extract changelist ID from "CL N:" line
-    private static final Pattern CL_ID_PATTERN = Pattern.compile("^CL (\\d+):$");
+    // Pattern to extract changelist ID from "Changelist: N" line
+    private static final Pattern CL_ID_PATTERN = Pattern.compile("^Changelist:\\s(\\d+)$");
 
     // Pattern to extract head from "Current Changelist: N (Head: N)"
     private static final Pattern HEAD_PATTERN = Pattern.compile("\\(Head:\\s*(\\d+)\\)");
