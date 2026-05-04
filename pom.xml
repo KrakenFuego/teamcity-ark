@@ -6,7 +6,7 @@
 
     <groupId>com.ark.teamcity</groupId>
     <artifactId>teamcity-ark-vcs-plugin</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.5</version>
     <packaging>pom</packaging>
 
     <name>TeamCity ARK VCS Plugin</name>
