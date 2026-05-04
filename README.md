@@ -8,7 +8,7 @@ This is a TeamCity VCS plugin for ARK version control. It provides first-class V
 
 The plugin wraps the ARK CLI client (`ark`) so you will need that configured on your server and build agents.
 
-Currently only tested on Windows on a single branch.
+Currently tested on Linux Teamcity Server & Windows Build Agents.
 
 ## Current Status
 
