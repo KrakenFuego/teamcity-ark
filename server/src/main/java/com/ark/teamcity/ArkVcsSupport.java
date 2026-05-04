@@ -62,16 +62,15 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
         ArkCommandExecutor executor = createExecutor(root);
 
         // Ensure workspace is initialized before running commands
-        String email = root.getProperty(ArkSettings.USER_EMAIL);
         String host = root.getProperty(ArkSettings.SERVER_HOST);
-        LOG.info("Email: " + email + ", Host: " + host);
+        LOG.info("Host: " + host);
 
-        if (email != null && host != null) {
+        if (host != null) {
             LOG.info("Calling ensureWorkspaceInitialized...");
-            executor.ensureWorkspaceInitialized(email, host);
+            executor.ensureWorkspaceInitialized(host);
             LOG.info("ensureWorkspaceInitialized completed");
         } else {
-            LOG.warn("Email or host is null, skipping workspace initialization");
+            LOG.warn("Host is null, skipping workspace initialization");
         }
 
         LOG.info("Calling getCurrentChangelistId...");
@@ -102,10 +101,9 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
       ArkCommandExecutor executor = createExecutor(root);
 
       // Ensure workspace initialized
-      String email = root.getProperty(ArkSettings.USER_EMAIL);
       String host = root.getProperty(ArkSettings.SERVER_HOST);
-      if (email != null && host != null) {
-          executor.ensureWorkspaceInitialized(email, host);
+      if (host != null) {
+          executor.ensureWorkspaceInitialized(host);
       }
 
       // Always fetch all branches - TeamCity will filter by branch spec
@@ -410,7 +408,9 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
     public Map<String, String> getDefaultVcsProperties() {
         Map<String, String> defaults = new HashMap<>();
         defaults.put(ArkSettings.BRANCH_NAME, ArkSettings.DEFAULT_BRANCH_NAME);
-        defaults.put(ArkSettings.ARK_EXECUTABLE_PATH, ArkSettings.DEFAULT_ARK_EXECUTABLE);
+        defaults.put(ArkSettings.ARK_EXECUTABLE_PATH_WINDOWS, ArkSettings.DEFAULT_ARK_EXECUTABLE);
+        defaults.put(ArkSettings.ARK_EXECUTABLE_PATH_MAC, ArkSettings.DEFAULT_ARK_EXECUTABLE);
+        defaults.put(ArkSettings.ARK_EXECUTABLE_PATH_LINUX, ArkSettings.DEFAULT_ARK_EXECUTABLE);
         return defaults;
     }
 
@@ -436,11 +436,13 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
                             "Server host is required"));
                 }
 
-                // Validate user email
-                String userEmail = properties.get(ArkSettings.USER_EMAIL);
-                if (userEmail == null || userEmail.trim().isEmpty()) {
-                    errors.add(new InvalidProperty(ArkSettings.USER_EMAIL,
-                            "User email is required"));
+                // User email is optional for bot-token authentication.
+
+                // Validate bot token
+                String botToken = properties.get(ArkSettings.USER_PASSWORD);
+                if (botToken == null || botToken.trim().isEmpty()) {
+                    errors.add(new InvalidProperty(ArkSettings.USER_PASSWORD,
+                            "Bot token is required"));
                 }
 
                 // Validate branch name
@@ -448,13 +450,6 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
                 if (branch == null || branch.trim().isEmpty()) {
                     errors.add(new InvalidProperty(ArkSettings.BRANCH_NAME,
                             "Branch name is required"));
-                }
-
-                // Validate executable path
-                String arkPath = properties.get(ArkSettings.ARK_EXECUTABLE_PATH);
-                if (arkPath == null || arkPath.trim().isEmpty()) {
-                    errors.add(new InvalidProperty(ArkSettings.ARK_EXECUTABLE_PATH,
-                            "ARK executable path is required"));
                 }
 
                 return errors;
@@ -499,17 +494,35 @@ public class ArkVcsSupport extends ServerVcsSupport implements BuildPatchByCheck
     // Helper method to create command executor
     @NotNull
     private ArkCommandExecutor createExecutor(@NotNull VcsRoot root) {
-        String arkPath = root.getProperty(ArkSettings.ARK_EXECUTABLE_PATH,
-                ArkSettings.DEFAULT_ARK_EXECUTABLE);
+        String arkPath = resolveArkExecutablePath(root);
         String workingDir = root.getProperty(ArkSettings.WORKING_DIRECTORY);
-        String password = root.getProperty(ArkSettings.USER_PASSWORD);
+        String botToken = root.getProperty(ArkSettings.USER_PASSWORD);
 
         File workDir = null;
         if (workingDir != null && !workingDir.trim().isEmpty()) {
             workDir = new File(workingDir);
         }
 
-        return new ArkCommandExecutor(arkPath, workDir, password);
+        return new ArkCommandExecutor(arkPath, workDir, botToken);
+    }
+
+    @NotNull
+    public static String resolveArkExecutablePath(@NotNull VcsRoot root) {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ENGLISH);
+        String osSpecificPath;
+        if (osName.contains("win")) {
+            osSpecificPath = root.getProperty(ArkSettings.ARK_EXECUTABLE_PATH_WINDOWS);
+        } else if (osName.contains("mac") || osName.contains("darwin")) {
+            osSpecificPath = root.getProperty(ArkSettings.ARK_EXECUTABLE_PATH_MAC);
+        } else {
+            osSpecificPath = root.getProperty(ArkSettings.ARK_EXECUTABLE_PATH_LINUX);
+        }
+
+        if (osSpecificPath != null && !osSpecificPath.trim().isEmpty()) {
+            return osSpecificPath.trim();
+        }
+
+        return ArkSettings.DEFAULT_ARK_EXECUTABLE;
     }
 
     // Public helper method for ArkCollectChangesPolicy

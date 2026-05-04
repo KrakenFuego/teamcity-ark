@@ -43,8 +43,8 @@ Currently only tested on Windows on a single branch.
 2. Upload to TeamCity: **Administration -> Plugins -> Upload plugin zip**
 3. Restart TeamCity server
 4. **Install ARK CLI on TeamCity server** (for change detection, required for both checkout modes)
-5. **Initialize your ARK workspace on your server** (`ark init -email <email> -host <server:port>`)
-6. **Configure your VCS Root** (select ARK from the list, set your project name, server host, and working directory)
+5. **Configure a bot user token in ARK admin UI**
+6. **Configure your VCS Root** (select ARK from the list, set your project name, server host, bot token, and working directory)
 7. **For Agent-Side Checkout**: Install ARK CLI on all build agents
 
 ## Building from Source
@@ -59,11 +59,14 @@ The plugin ZIP will be created at: `build/target/teamcity-ark-vcs.zip`
 
 ### VCS Root Settings
 
-- **Server Host**: ARK server host and port (e.g., `ganymede:9000`)
-- **User Email**: Email address for ARK authentication
+- **Server Host**: ARK server host and optional port (e.g., `ganymede:9000`; defaults to port `9000` when omitted)
+- **Token**: Bot token shown in the ARK admin UI
+- **User Email**: Optional metadata; bot-token authentication does not use this value
 - **Project Name**: The ARK project to monitor
 - **Branch Name**: The branch to monitor (default: `main`)
-- **ARK Executable Path**: Path to `ark` executable (default: `ark`)
+- **ARK Executable Windows**: Path to `ark.exe` on Windows machines (e.g., `C:\Apps\Ark_1_0_5\ark.exe`)
+- **ARK Executable Mac**: Path to `ark` on macOS machines (e.g., `/usr/local/bin/ark`)
+- **ARK Executable Linux**: Path to `ark` on Linux machines (e.g., `/usr/local/bin/ark`)
 - **Working Directory**: Path to your ARK workspace on your server
 
 ### Finding Your Project Name
@@ -86,6 +89,8 @@ ark branch-list -project <project-name>
 3. Plugin uses `ark print -cl <id>` to get changelist details and file changes
 4. If new changelists are detected, TeamCity triggers configured builds showing actual changed files
 
+Change detection always runs on the TeamCity server. Even with agent-side checkout enabled, the TeamCity server must have a native ARK CLI for its own OS and a server-local working directory.
+
 ### Checkout Methods
 
 Both server-side and agent-side checkout are supported. Choose the mode that best fits your TeamCity configuration:
@@ -99,9 +104,10 @@ Both server-side and agent-side checkout are supported. Choose the mode that bes
 
 **Agent-Side Checkout**:
 - Agents perform checkout directly using ARK CLI
-- Agent runs `ark init` on first checkout
+- Agent runs `ark init-bot -token <token> -host <host:port>` on first checkout
 - Subsequent checkouts use `ark get -cl <id>` for fast updates
 - Requires ARK CLI installed on all agents
+- Uses the ARK executable path for the agent's OS, while server polling uses the TeamCity server's OS path
 - Best for distributed teams where agents have full CLI access
 
 ## ARK CLI Commands Used
@@ -111,7 +117,7 @@ Both server-side and agent-side checkout are supported. Choose the mode that bes
 | Get HEAD changelist | `ark print -cl latest` |
 | Get changelist details | `ark print -cl <id>` |
 | Checkout/get changelist | `ark get -cl <id>` |
-| Initialize workspace | `ark init -email <email> -host <host>` |
+| Initialize workspace | `ark init-bot -token <token> -host <host:port>` |
 | Create tag | `ark tag-add -name <name> -cl <id>` |
 | List projects | `ark project-list` |
 | List branches | `ark branch-list -project <name>` |

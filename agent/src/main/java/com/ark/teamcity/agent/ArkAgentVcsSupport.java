@@ -13,16 +13,19 @@ import org.jetbrains.annotations.NotNull;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Agent-side VCS support for ARK
  * Handles checkout directly on the build agent using ark CLI
  */
 public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheckoutRules2 {
+
+    private static final int CHECKOUT_VERIFY_RETRIES = 2;
+    private static final long CHECKOUT_VERIFY_DELAY_MS = 1000L;
 
     @NotNull
     @Override
@@ -44,10 +47,11 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
             @NotNull AgentRunningBuild build) {
 
         // Check if 'ark' command is available on the agent
-        if (!isArkCommandAvailable()) {
+        String arkExecutablePath = resolveArkExecutablePath(vcsRoot);
+        if (!isArkCommandAvailable(arkExecutablePath)) {
             return AgentCheckoutAbility.noVcsClientOnAgent(
-                "ARK (ark) command not found on agent. " +
-                "Please install ARK CLI and ensure it's in PATH.");
+                "ARK command not found on agent at '" + arkExecutablePath + "'. " +
+                "Please install ARK CLI and configure the OS-specific executable path.");
         }
 
         build.getBuildLogger().message("ARK: Agent checkout is available");
@@ -92,12 +96,8 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
             }
         }
         String serverHost = root.getProperty("serverHost");
-        String userEmail = root.getProperty("userEmail");
-        String userPassword = root.getProperty("secure:userPassword");
-        String arkExecutablePath = root.getProperty("arkExecutablePath");
-        if (arkExecutablePath == null || arkExecutablePath.trim().isEmpty()) {
-            arkExecutablePath = "ark";
-        }
+        String botToken = root.getProperty("secure:userPassword");
+        String arkExecutablePath = resolveArkExecutablePath(root);
 
         if (projectName == null || projectName.trim().isEmpty()) {
             throw new VcsException("Project name not configured in VCS root");
@@ -105,11 +105,8 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
         if (serverHost == null || serverHost.trim().isEmpty()) {
             throw new VcsException("Server host not configured in VCS root");
         }
-        if (userEmail == null || userEmail.trim().isEmpty()) {
-            throw new VcsException("User email not configured in VCS root");
-        }
-        if (userPassword == null || userPassword.trim().isEmpty()) {
-            throw new VcsException("Password not configured in VCS root");
+        if (botToken == null || botToken.trim().isEmpty()) {
+            throw new VcsException("Bot token not configured in VCS root");
         }
 
         logger.message("ARK: Project: " + projectName);
@@ -140,12 +137,12 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
 
             // Initialize workspace
             logger.message("ARK: Initializing workspace");
-            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
-                "init", "-email", userEmail, "-host", serverHost);
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath,
+                "init-bot", "-token", botToken, "-host", normalizeHostWithDefaultPort(serverHost));
 
             // Switch to the correct project and branch
             logger.message("ARK: Switching to project " + projectName + " branch " + branchName);
-            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath,
                 "switch-branch", "-project", projectName, "-branch", branchName);
 
         } else if (!workspaceExists) {
@@ -166,12 +163,12 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
 
             // Initialize workspace
             logger.message("ARK: Initializing workspace");
-            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
-                "init", "-email", userEmail, "-host", serverHost);
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath,
+                "init-bot", "-token", botToken, "-host", normalizeHostWithDefaultPort(serverHost));
 
             // Switch to the correct project and branch
             logger.message("ARK: Switching to project " + projectName + " branch " + branchName);
-            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath,
                 "switch-branch", "-project", projectName, "-branch", branchName);
 
         } else {
@@ -180,14 +177,15 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
 
             // Always switch to the correct project and branch in case it changed
             logger.message("ARK: Ensuring correct project " + projectName + " branch " + branchName);
-            runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath,
                 "switch-branch", "-project", projectName, "-branch", branchName);
         }
 
         // Get specific changelist
         logger.message("ARK: Getting CL " + toVersion);
-        runArkCommand(checkoutDirectory, logger, arkExecutablePath, userPassword,
+        runArkCommand(checkoutDirectory, logger, arkExecutablePath,
             "get", "-cl", toVersion);
+        verifyCheckoutPopulated(checkoutDirectory, logger, arkExecutablePath, toVersion);
 
         logger.message("ARK: Checkout completed successfully");
     }
@@ -195,9 +193,9 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
     /**
      * Check if ark command is available
      */
-    private boolean isArkCommandAvailable() {
+    private boolean isArkCommandAvailable(String arkExecutablePath) {
         try {
-            ProcessBuilder pb = new ProcessBuilder("ark", "--help");
+            ProcessBuilder pb = new ProcessBuilder(arkExecutablePath, "--help");
             pb.redirectErrorStream(true);
             Process process = pb.start();
 
@@ -216,11 +214,29 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
         }
     }
 
+    private String resolveArkExecutablePath(VcsRoot root) {
+        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ENGLISH);
+        String osSpecificPath;
+        if (osName.contains("win")) {
+            osSpecificPath = root.getProperty("arkExecutablePathWindows");
+        } else if (osName.contains("mac") || osName.contains("darwin")) {
+            osSpecificPath = root.getProperty("arkExecutablePathMac");
+        } else {
+            osSpecificPath = root.getProperty("arkExecutablePathLinux");
+        }
+
+        if (osSpecificPath != null && !osSpecificPath.trim().isEmpty()) {
+            return osSpecificPath.trim();
+        }
+
+        return "ark";
+    }
+
     /**
      * Run an ark command
      */
     private void runArkCommand(File workingDir, BuildProgressLogger logger,
-                              String arkExecutable, String password,
+                              String arkExecutable,
                               String... args) throws VcsException {
         try {
             // Build command
@@ -228,7 +244,7 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
             command.add(arkExecutable);
             command.addAll(Arrays.asList(args));
 
-            logger.message("ARK: Running: " + String.join(" ", command));
+            logger.message("ARK: Running: " + formatCommandForLog(command));
             if (workingDir != null) {
                 logger.message("ARK: Working directory: " + workingDir.getAbsolutePath());
             }
@@ -240,9 +256,6 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
             pb.redirectErrorStream(true);
 
             Process process = pb.start();
-
-            // Check if this is a command that needs authentication (init command)
-            boolean needsAuth = args.length > 0 && "init".equals(args[0]);
 
             // Read output in a separate thread to prevent blocking
             StringBuilder output = new StringBuilder();
@@ -260,31 +273,15 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
             });
             outputReader.start();
 
-            // Only send password for commands that need authentication
-            if (needsAuth && password != null && !password.isEmpty()) {
-                logger.message("ARK: Waiting for password prompt...");
-                // Give the process time to start and prompt for password
-                Thread.sleep(5000);
-
-                // Only send password if process is still running (waiting for input)
-                if (process.isAlive()) {
-                    OutputStreamWriter writer = new OutputStreamWriter(process.getOutputStream());
-                    writer.write(password);
-                    writer.write("\n");
-                    writer.flush();
-                    writer.close();
-                    logger.message("ARK: Password sent");
-                } else {
-                    logger.message("ARK: Process completed without needing password (cached auth)");
-                }
-            } else {
-                process.getOutputStream().close();
-            }
-
-            // Wait for output reader to finish
-            outputReader.join();
+            // init-bot receives the token as an argument, so ARK commands should not wait on stdin.
+            closeProcessInput(process, logger);
 
             int exitCode = process.waitFor();
+
+            // Wait for output after the process exits so short-lived Windows commands
+            // cannot fail the command just because stdin closed first.
+            outputReader.join();
+
             if (exitCode != 0) {
                 throw new VcsException("ARK command failed with exit code " + exitCode +
                     "\nOutput: " + output.toString());
@@ -296,6 +293,93 @@ public class ArkAgentVcsSupport extends AgentVcsSupport implements UpdateByCheck
             }
             throw new VcsException("Failed to run ARK command", e);
         }
+    }
+
+    private void closeProcessInput(Process process, BuildProgressLogger logger) {
+        try {
+            process.getOutputStream().close();
+        } catch (Exception e) {
+            logger.warning("Ignoring failure while closing ARK command stdin: " + e.getMessage());
+        }
+    }
+
+    private String formatCommandForLog(List<String> command) {
+        List<String> masked = new ArrayList<>(command);
+        for (int i = 0; i < masked.size() - 1; i++) {
+            if ("-token".equals(masked.get(i))) {
+                masked.set(i + 1, "********");
+            }
+        }
+        return String.join(" ", masked);
+    }
+
+    private String normalizeHostWithDefaultPort(String host) {
+        String trimmed = host.trim();
+        return trimmed.contains(":") ? trimmed : trimmed + ":9000";
+    }
+
+    private void verifyCheckoutPopulated(File checkoutDirectory, BuildProgressLogger logger,
+                                         String arkExecutablePath, String toVersion) throws VcsException {
+        for (int attempt = 0; attempt <= CHECKOUT_VERIFY_RETRIES; attempt++) {
+            CheckoutDirectoryStats stats = collectCheckoutDirectoryStats(checkoutDirectory);
+            logger.message("ARK: Checkout contains " + stats.visibleFiles + " files and " +
+                stats.visibleDirectories + " directories outside .ark");
+
+            if (stats.visibleDirectories > 0 || stats.visibleFiles == 0) {
+                return;
+            }
+
+            if (attempt == CHECKOUT_VERIFY_RETRIES) {
+                logger.warning("ARK: Checkout has files but no directories outside .ark after verification. " +
+                    "Continuing because ARK get completed successfully.");
+                return;
+            }
+
+            logger.message("ARK: No directories visible after get; retrying CL " + toVersion +
+                " after a short delay");
+            sleepBeforeCheckoutRetry();
+            runArkCommand(checkoutDirectory, logger, arkExecutablePath, "get", "-cl", toVersion);
+        }
+    }
+
+    private CheckoutDirectoryStats collectCheckoutDirectoryStats(File checkoutDirectory) {
+        CheckoutDirectoryStats stats = new CheckoutDirectoryStats();
+        collectCheckoutDirectoryStats(checkoutDirectory, stats);
+        return stats;
+    }
+
+    private void collectCheckoutDirectoryStats(File directory, CheckoutDirectoryStats stats) {
+        File[] files = directory.listFiles();
+        if (files == null) {
+            return;
+        }
+
+        for (File file : files) {
+            if (file.getName().equals(".ark")) {
+                continue;
+            }
+
+            if (file.isDirectory()) {
+                stats.visibleDirectories++;
+                collectCheckoutDirectoryStats(file, stats);
+            } else if (file.isFile()) {
+                stats.visibleFiles++;
+            }
+        }
+    }
+
+    private void sleepBeforeCheckoutRetry() throws VcsException {
+        try {
+            Thread.sleep(CHECKOUT_VERIFY_DELAY_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new VcsException("Interrupted while waiting to verify ARK checkout", e);
+        }
+    }
+
+    private static class CheckoutDirectoryStats {
+        int visibleFiles;
+        int visibleDirectories;
     }
 
     /**

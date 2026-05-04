@@ -27,29 +27,29 @@
             <td>
                 <props:textProperty name="serverHost" className="longField" maxlength="256"/>
                 <span class="smallNote">
-                    The ARK server host and port (e.g., ganymede:9000)
+                    The ARK server host and optional port (e.g., ganymede:9000). If omitted, port 9000 is used.
                 </span>
                 <span class="error" id="error_serverHost"></span>
             </td>
         </tr>
 
         <tr>
-            <th><label for="userEmail">User Email:<span class="mandatoryAsterix" title="Mandatory field">*</span></label></th>
+            <th><label for="userEmail">User Email:</label></th>
             <td>
                 <props:textProperty name="userEmail" className="longField" maxlength="256"/>
                 <span class="smallNote">
-                    Email address for ARK authentication
+                    Optional metadata only. ARK workspace initialization uses the bot token below.
                 </span>
                 <span class="error" id="error_userEmail"></span>
             </td>
         </tr>
 
         <tr>
-            <th><label for="secure:userPassword">Password:<span class="mandatoryAsterix" title="Mandatory field">*</span></label></th>
+            <th><label for="secure:userPassword">Token:<span class="mandatoryAsterix" title="Mandatory field">*</span></label></th>
             <td>
                 <props:passwordProperty name="secure:userPassword" className="longField"/>
                 <span class="smallNote">
-                    Password for ARK authentication
+                    Bot token for ARK authentication. Use the token shown for the bot user in the ARK admin UI.
                 </span>
                 <span class="error" id="error_secure:userPassword"></span>
             </td>
@@ -82,14 +82,38 @@
         <bs:branchSpecTableRow/>
 
         <tr>
-            <th><label for="arkExecutablePath">ARK Executable:</label></th>
+            <th><label for="arkExecutablePathWindows">ARK Executable Windows:</label></th>
             <td>
-                <props:textProperty name="arkExecutablePath" className="longField" maxlength="512"/>
+                <props:textProperty name="arkExecutablePathWindows" className="longField" maxlength="512"/>
                 <span class="smallNote">
-                    Path to the ARK executable (default: ark)
-                    <br/>Leave as 'ark' if it's in your system PATH
+                    Path to the ARK executable on Windows machines (e.g., C:\Apps\Ark_1_0_5\ark.exe)
+                    <br/>Leave empty to use <code>ark</code> from PATH on Windows.
                 </span>
-                <span class="error" id="error_arkExecutablePath"></span>
+                <span class="error" id="error_arkExecutablePathWindows"></span>
+            </td>
+        </tr>
+
+        <tr>
+            <th><label for="arkExecutablePathMac">ARK Executable Mac:</label></th>
+            <td>
+                <props:textProperty name="arkExecutablePathMac" className="longField" maxlength="512"/>
+                <span class="smallNote">
+                    Path to the ARK executable on macOS machines (e.g., /usr/local/bin/ark)
+                    <br/>Leave empty to use <code>ark</code> from PATH on macOS.
+                </span>
+                <span class="error" id="error_arkExecutablePathMac"></span>
+            </td>
+        </tr>
+
+        <tr>
+            <th><label for="arkExecutablePathLinux">ARK Executable Linux:</label></th>
+            <td>
+                <props:textProperty name="arkExecutablePathLinux" className="longField" maxlength="512"/>
+                <span class="smallNote">
+                    Path to the ARK executable on Linux machines (e.g., /usr/local/bin/ark)
+                    <br/>Leave empty to use <code>ark</code> from PATH on Linux.
+                </span>
+                <span class="error" id="error_arkExecutablePathLinux"></span>
             </td>
         </tr>
 
@@ -114,8 +138,10 @@
         <li>Both <strong>server-side</strong> and <strong>agent-side</strong> checkout modes are supported</li>
         <li><strong>Server-side checkout</strong>: Requires <strong>Working Directory</strong> to be configured. Agents don't need ARK CLI.</li>
         <li><strong>Agent-side checkout</strong>: Requires ARK CLI (<code>ark</code>) installed on all build agents</li>
-        <li>The ARK CLI (<code>ark</code>) must be installed on the TeamCity server (for change detection)</li>
-        <li><strong>For agent-side checkout:</strong> ARK workspace must be initialized on build agents</li>
+        <li>The ARK CLI (<code>ark</code>) must be installed on the TeamCity server for VCS polling and change detection, even when checkout is agent-side.</li>
+        <li>The plugin chooses the ARK executable path for the operating system running each command. Server polling uses the server OS path; agent-side checkout uses the agent OS path.</li>
+        <li>Workspace initialization uses <code>ark init-bot -token &lt;token&gt; -host &lt;host:port&gt;</code>; configure the token from the ARK admin UI bot user.</li>
+        <li><strong>For agent-side checkout:</strong> ARK workspaces are initialized on build agents with the configured bot token</li>
         <li>Personal builds are not supported</li>
     </ul>
 </div>

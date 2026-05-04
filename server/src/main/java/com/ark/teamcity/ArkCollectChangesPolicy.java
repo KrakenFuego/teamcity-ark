@@ -69,10 +69,9 @@ public class ArkCollectChangesPolicy implements CollectChangesBetweenRepositorie
         ArkCommandExecutor executor = myVcs.createExecutorForRoot(toRoot);
 
         // Ensure workspace is initialized before running commands
-        String email = toRoot.getProperty(ArkSettings.USER_EMAIL);
         String host = toRoot.getProperty(ArkSettings.SERVER_HOST);
-        if (email != null && host != null) {
-            executor.ensureWorkspaceInitialized(email, host);
+        if (host != null) {
+            executor.ensureWorkspaceInitialized(host);
         }
 
         // Switch to the correct branch before collecting changes
@@ -144,10 +143,9 @@ public class ArkCollectChangesPolicy implements CollectChangesBetweenRepositorie
 
         // Get executor and ensure workspace is initialized
         ArkCommandExecutor executor = myVcs.createExecutorForRoot(root);
-        String email = root.getProperty(ArkSettings.USER_EMAIL);
         String host = root.getProperty(ArkSettings.SERVER_HOST);
-        if (email != null && host != null) {
-            executor.ensureWorkspaceInitialized(email, host);
+        if (host != null) {
+            executor.ensureWorkspaceInitialized(host);
         }
 
         for (Map.Entry<String, String> entry : toBranches.entrySet()) {

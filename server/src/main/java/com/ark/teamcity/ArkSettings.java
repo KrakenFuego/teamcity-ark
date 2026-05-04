@@ -21,19 +21,29 @@ public class ArkSettings {
     public static final String SERVER_HOST = "serverHost";
 
     /**
-     * User email for ARK authentication
+     * Optional user email metadata. Bot-token authentication does not use this value.
      */
     public static final String USER_EMAIL = "userEmail";
 
     /**
-     * User password for ARK authentication (secure property)
+     * Bot token for ARK authentication (secure property)
      */
     public static final String USER_PASSWORD = "secure:userPassword";
 
     /**
-     * Path to ARK executable (default: ark)
+     * Path to ARK executable on Windows machines
      */
-    public static final String ARK_EXECUTABLE_PATH = "arkExecutablePath";
+    public static final String ARK_EXECUTABLE_PATH_WINDOWS = "arkExecutablePathWindows";
+
+    /**
+     * Path to ARK executable on macOS machines
+     */
+    public static final String ARK_EXECUTABLE_PATH_MAC = "arkExecutablePathMac";
+
+    /**
+     * Path to ARK executable on Linux machines
+     */
+    public static final String ARK_EXECUTABLE_PATH_LINUX = "arkExecutablePathLinux";
 
     /**
      * Working directory for ARK operations (optional)

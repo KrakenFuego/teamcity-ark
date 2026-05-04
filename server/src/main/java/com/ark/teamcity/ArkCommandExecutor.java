@@ -7,8 +7,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -29,16 +29,16 @@ public class ArkCommandExecutor {
 
     private final String arkExecutablePath;
     private final File workingDirectory;
-    private final String password;
+    private final String botToken;
 
     public ArkCommandExecutor(@NotNull String arkExecutablePath, @Nullable File workingDirectory) {
         this(arkExecutablePath, workingDirectory, null);
     }
 
-    public ArkCommandExecutor(@NotNull String arkExecutablePath, @Nullable File workingDirectory, @Nullable String password) {
+    public ArkCommandExecutor(@NotNull String arkExecutablePath, @Nullable File workingDirectory, @Nullable String botToken) {
         this.arkExecutablePath = arkExecutablePath;
         this.workingDirectory = workingDirectory;
-        this.password = password;
+        this.botToken = botToken;
     }
 
     /**
@@ -55,12 +55,14 @@ public class ArkCommandExecutor {
         command.addAll(args);
 
         LOG.info("=== ARK COMMAND EXECUTION ===");
-        LOG.info("Command: " + command);
+        LOG.info("Command: " + formatCommandForLog(command));
         LOG.info("Working directory: " + (workingDirectory != null ? workingDirectory.getAbsolutePath() : "NULL (not set!)"));
-        LOG.info("Password configured: " + (password != null && !password.isEmpty() ? "YES" : "NO"));
+        LOG.info("Bot token configured: " + (botToken != null && !botToken.isEmpty() ? "YES" : "NO"));
 
         Process process = null;
         try {
+            validateLaunchConfiguration(command);
+
             ProcessBuilder pb = new ProcessBuilder(command);
             if (workingDirectory != null) {
                 pb.directory(workingDirectory);
@@ -74,9 +76,6 @@ public class ArkCommandExecutor {
 
             LOG.info("Starting process...");
             process = pb.start();
-
-            // Check if this is a command that needs authentication (init command)
-            boolean needsAuth = args.size() > 0 && "init".equals(args.get(0));
 
             // Read stdout in a separate thread to prevent blocking
             StringBuilder stdout = new StringBuilder();
@@ -117,33 +116,16 @@ public class ArkCommandExecutor {
             });
             stderrReader.start();
 
-            // Only send password for commands that need authentication
-            if (needsAuth && password != null && !password.isEmpty()) {
-                LOG.info("Command needs authentication, waiting for password prompt...");
-                // Give the process time to start and prompt for password
-                Thread.sleep(5000);
+            // init-bot receives the token as an argument, so ARK commands should not wait on stdin.
+            closeProcessInput(process, command);
 
-                // Only send password if process is still running (waiting for input)
-                if (process.isAlive()) {
-                    OutputStreamWriter writer = new OutputStreamWriter(process.getOutputStream());
-                    writer.write(password);
-                    writer.write("\n");
-                    writer.flush();
-                    writer.close();
-                    LOG.info("Password sent");
-                } else {
-                    LOG.info("Process completed without needing password (cached auth)");
-                }
-            } else {
-                // Close stdin immediately for commands that don't need auth
-                process.getOutputStream().close();
-            }
+            int exitCode = process.waitFor();
 
-            // Wait for readers to finish
+            // Wait for readers to finish after the process exits so short-lived Windows
+            // commands cannot fail the command just because stdin closed first.
             stdoutReader.join();
             stderrReader.join();
 
-            int exitCode = process.waitFor();
             LOG.info("Process completed with exit code: " + exitCode);
             LOG.info("Stdout: " + stdout.toString());
             LOG.info("Stderr: " + stderr.toString());
@@ -167,13 +149,71 @@ public class ArkCommandExecutor {
             if (e instanceof VcsException) {
                 throw (VcsException) e;
             }
-            throw new VcsException("Failed to execute ARK command: " + command, e);
+            throw new VcsException(buildLaunchFailureMessage(command, e), e);
         } finally {
             // Ensure process is destroyed if still running
             if (process != null && process.isAlive()) {
                 process.destroy();
             }
         }
+    }
+
+    private void validateLaunchConfiguration(@NotNull List<String> command) throws VcsException {
+        if (workingDirectory != null && workingDirectory.exists() && !workingDirectory.isDirectory()) {
+            throw new VcsException("ARK working directory is not a directory: " +
+                workingDirectory.getAbsolutePath());
+        }
+
+        File executable = new File(command.get(0));
+        if (executable.isAbsolute()) {
+            if (!executable.exists()) {
+                throw new VcsException("ARK executable does not exist on this machine: " +
+                    executable.getAbsolutePath() + ". Server polling runs on the TeamCity server; " +
+                    "agent-side checkout runs later on the build agent.");
+            }
+            if (!executable.isFile()) {
+                throw new VcsException("ARK executable path is not a file on this machine: " +
+                    executable.getAbsolutePath());
+            }
+            if (!executable.canExecute()) {
+                throw new VcsException("ARK executable is not executable by the TeamCity process: " +
+                    executable.getAbsolutePath());
+            }
+        }
+    }
+
+    @NotNull
+    private String buildLaunchFailureMessage(@NotNull List<String> command, @NotNull Exception e) {
+        String message = "Failed to execute ARK command: " + formatCommandForLog(command) +
+            ". Cause: " + e.getMessage();
+
+        if (e instanceof IOException) {
+            message += ". This command is running on the TeamCity server for VCS polling/change collection. " +
+                "Use a native executable and working directory for that server OS. Windows agent paths " +
+                "are only used during agent-side checkout.";
+        }
+
+        return message;
+    }
+
+    private void closeProcessInput(@NotNull Process process, @NotNull List<String> command) {
+        try {
+            process.getOutputStream().close();
+        } catch (Exception e) {
+            LOG.warn("Ignoring failure while closing stdin for ARK command " +
+                formatCommandForLog(command) + ": " + e.getMessage());
+        }
+    }
+
+    @NotNull
+    private String formatCommandForLog(@NotNull List<String> command) {
+        List<String> masked = new ArrayList<>(command);
+        for (int i = 0; i < masked.size() - 1; i++) {
+            if ("-token".equals(masked.get(i))) {
+                masked.set(i + 1, "********");
+            }
+        }
+        return masked.toString();
     }
 
     /**
@@ -260,12 +300,20 @@ public class ArkCommandExecutor {
     /**
      * Initialize an ARK workspace
      *
-     * @param email User email for authentication
      * @param host Server host (e.g., "ganymede:9000")
      * @throws VcsException if init fails
      */
-    public void initWorkspace(@NotNull String email, @NotNull String host) throws VcsException {
-        execute("init", "-email", email, "-host", host);
+    public void initWorkspace(@NotNull String host) throws VcsException {
+        if (botToken == null || botToken.trim().isEmpty()) {
+            throw new VcsException("Bot token is not configured in VCS root");
+        }
+        execute("init-bot", "-token", botToken, "-host", normalizeHostWithDefaultPort(host));
+    }
+
+    @NotNull
+    private String normalizeHostWithDefaultPort(@NotNull String host) {
+        String trimmed = host.trim();
+        return trimmed.contains(":") ? trimmed : trimmed + ":9000";
     }
 
     /**
@@ -418,11 +466,10 @@ public class ArkCommandExecutor {
     /**
      * Ensure workspace is initialized
      *
-     * @param email User email
      * @param host Server host
      * @throws VcsException if initialization fails
      */
-    public void ensureWorkspaceInitialized(@NotNull String email, @NotNull String host) throws VcsException {
+    public void ensureWorkspaceInitialized(@NotNull String host) throws VcsException {
         LOG.info("ensureWorkspaceInitialized called - workingDirectory: " +
                  (workingDirectory != null ? workingDirectory.getAbsolutePath() : "null"));
 
@@ -446,7 +493,7 @@ public class ArkCommandExecutor {
 
         // Initialize the workspace
         LOG.info("Initializing ARK workspace at: " + workingDirectory.getAbsolutePath());
-        initWorkspace(email, host);
+        initWorkspace(host);
         LOG.info("ARK workspace initialized successfully");
     }
 
